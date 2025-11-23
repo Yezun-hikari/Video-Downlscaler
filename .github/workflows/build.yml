@@ -1,0 +1,66 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    # We use --collect-all imageio_ffmpeg to ensure the binary is included.
+    # We use a single step per OS type to avoid redundancy.
+
+    - name: Build with PyInstaller (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        pyinstaller --noconfirm --name="VideoCompressor" --windowed --onefile --collect-all imageio_ffmpeg src/main.py
+
+    - name: Build with PyInstaller (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        pyinstaller --noconfirm --name="VideoCompressor" --windowed --onefile --collect-all imageio_ffmpeg src/main.py
+
+    - name: Archive Artifacts (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd dist
+        Compress-Archive -Path VideoCompressor.exe -DestinationPath VideoCompressor-Windows.zip
+
+    - name: Archive Artifacts (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd dist
+        zip -r VideoCompressor-Linux.zip VideoCompressor
+
+    - name: Archive Artifacts (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        cd dist
+        zip -r VideoCompressor-macOS.zip VideoCompressor.app
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          dist/*.zip
