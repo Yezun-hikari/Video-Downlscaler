@@ -9,7 +9,9 @@ on:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    # Continue other jobs even if one fails
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
@@ -27,24 +29,29 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    # We use --collect-all imageio_ffmpeg to ensure the binary is included.
-    # We use a single step per OS type to avoid redundancy.
+    # We use --onedir (default or explicit) to create a directory based distribution.
+    # It is faster and often more robust for large frameworks like Qt.
+    # We still use --windowed to hide the console.
+    # We use --collect-all to ensure imageio_ffmpeg and its binaries are included.
 
-    - name: Build with PyInstaller (Windows)
-      if: matrix.os == 'windows-latest'
+    - name: Build with PyInstaller (Windows/Linux)
+      if: matrix.os != 'macos-latest'
       run: |
-        pyinstaller --noconfirm --name="VideoCompressor" --windowed --onefile --collect-all imageio_ffmpeg src/main.py
+        pyinstaller --noconfirm --name="VideoCompressor" --windowed --onedir --collect-all imageio_ffmpeg src/main.py
 
-    - name: Build with PyInstaller (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Build with PyInstaller (macOS)
+      if: matrix.os == 'macos-latest'
       run: |
-        pyinstaller --noconfirm --name="VideoCompressor" --windowed --onefile --collect-all imageio_ffmpeg src/main.py
+        pyinstaller --noconfirm --name="VideoCompressor" --windowed --onedir --collect-all imageio_ffmpeg src/main.py
+        # On macOS, --onedir --windowed creates VideoCompressor.app in dist/
+
+    # Archiving
 
     - name: Archive Artifacts (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         cd dist
-        Compress-Archive -Path VideoCompressor.exe -DestinationPath VideoCompressor-Windows.zip
+        Compress-Archive -Path VideoCompressor -DestinationPath VideoCompressor-Windows.zip
 
     - name: Archive Artifacts (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -56,6 +63,7 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: |
         cd dist
+        # Zip the .app bundle
         zip -r VideoCompressor-macOS.zip VideoCompressor.app
 
     - name: Release
