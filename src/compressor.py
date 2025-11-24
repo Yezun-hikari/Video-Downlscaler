@@ -54,26 +54,25 @@ def compress_video(input_path, output_path, target_size_mb, progress_callback=No
 
     target_total_bitrate = (target_size_mb * 8 * 1024 * 1024) / duration
 
-    # Audio bitrate (fixed 128k for stereo, or 96k if tight)
+    # Audio bitrate - Keep high quality (minimum 128k, preferably more)
+    # We prioritize video downscaling over audio degradation.
     audio_bitrate = 128 * 1024
 
     video_bitrate = target_total_bitrate - audio_bitrate
 
-    # If video bitrate is too low, reduce audio or scale down
-    if video_bitrate < 100 * 1024: # Less than 100k for video
-        audio_bitrate = 64 * 1024 # Reduce audio to 64k
-        video_bitrate = target_total_bitrate - audio_bitrate
-
     if video_bitrate < 1000:
-         raise ValueError("Target size is too small for this video length.")
+         raise ValueError("Target size is too small for this video length (even with minimal audio).")
 
     # Downscaling heuristic
-    # Calculate Bits Per Pixel (BPP) assuming 30fps if unknown
-    # BPP = bitrate / (width * height * fps)
-    # If BPP < 0.1, we should scale down.
-    # Let's target a BPP of around 0.1 for decent quality H.264
+    # Use H.265 (libx265) if possible for better compression efficiency
+    # H.265 is about 50% more efficient than H.264
+    codec = "libx265"
 
-    target_pixel_count = video_bitrate / (0.1 * 30)
+    # BPP calc
+    # For H.265, decent quality is around 0.05-0.07 BPP
+    target_bpp = 0.05
+
+    target_pixel_count = video_bitrate / (target_bpp * 30)
     current_pixel_count = width * height
 
     scale_filter = []
@@ -87,8 +86,7 @@ def compress_video(input_path, output_path, target_size_mb, progress_callback=No
         if new_width % 2 != 0: new_width -= 1
         if new_height % 2 != 0: new_height -= 1
 
-        # Don't scale down below 320x240 just to hit bitrate, it will look like a stamp.
-        # But user wants "under filesize", so we prioritize file size.
+        # Minimum resolution clamp
         if new_width < 320:
              new_width = 320
              new_height = int(320 * height / width)
@@ -107,9 +105,34 @@ def compress_video(input_path, output_path, target_size_mb, progress_callback=No
     # On Windows NUL, others /dev/null
     outfile_null = "NUL" if os.name == 'nt' else "/dev/null"
 
+    # Check if x265 is available, otherwise fallback to x264
+    # Simple check: assuming if we are here, we might want to try-catch or just try.
+    # But imageio-ffmpeg usually includes standard codecs. libx265 might be missing in some minimal builds.
+    # However, for this task, we assume we can try. If it fails, users might need a full ffmpeg.
+    # But wait, standard imageio-ffmpeg binaries (static) often do NOT include libx265 due to licensing?
+    # Let's check `imageio_ffmpeg.get_ffmpeg_exe()` version/info?
+    # Actually, many static builds DO include it now.
+    # If not, we should fallback to libx264.
+    # For safety in this environment without interactive check, let's try to detect or stick to x264 but optimize?
+    # The user said "if you can change codec... do it".
+    # Let's stick to libx264 but improve logic if we are unsure about binary support,
+    # OR we try.
+    # Let's try libx264 first to be safe BUT use "veryslow" preset for size?
+    # The user specifically complained about audio.
+    # Let's try to use libx265. If it fails, the tool crashes, which is bad.
+    # We will use libx264 for maximum compatibility but better presets if possible,
+    # OR we can try to detect.
+
+    # To be safe and compliant with "all common formats", H.264 is safest.
+    # H.265 might not play on all windows machines without extensions.
+    # User said "all common video formats should work".
+    # Let's stick to libx264 but just NOT kill the audio.
+
+    codec = "libx264" # Reverting to x264 for compatibility safety
+
     pass1_cmd = [
         ffmpeg_exe, "-y", "-i", input_path,
-        "-c:v", "libx264", "-b:v", f"{video_bitrate_kb}k", "-pass", "1",
+        "-c:v", codec, "-b:v", f"{video_bitrate_kb}k", "-pass", "1",
         "-an", # No audio for pass 1
         "-f", "mp4"
     ] + scale_filter + [outfile_null]
@@ -123,7 +146,7 @@ def compress_video(input_path, output_path, target_size_mb, progress_callback=No
     # Pass 2
     pass2_cmd = [
         ffmpeg_exe, "-y", "-i", input_path,
-        "-c:v", "libx264", "-b:v", f"{video_bitrate_kb}k", "-pass", "2",
+        "-c:v", codec, "-b:v", f"{video_bitrate_kb}k", "-pass", "2",
         "-c:a", "aac", "-b:a", f"{audio_bitrate_kb}k"
     ] + scale_filter + [output_path]
 

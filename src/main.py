@@ -97,6 +97,15 @@ class MainWindow(QMainWindow):
         size_layout.addWidget(self.size_input)
         layout.addLayout(size_layout)
 
+        # Output Filename Input
+        name_layout = QVBoxLayout()
+        name_label = QLabel("Output Filename:")
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Enter output filename (optional)")
+        name_layout.addWidget(name_label)
+        name_layout.addWidget(self.name_input)
+        layout.addLayout(name_layout)
+
         # Start Button
         self.start_btn = QPushButton("Start Compression")
         self.start_btn.clicked.connect(self.start_compression)
@@ -117,6 +126,12 @@ class MainWindow(QMainWindow):
         self.selected_file = file_path
         self.file_label.setText(f"Selected: {os.path.basename(file_path)}")
         self.start_btn.setEnabled(True)
+
+        # Suggest a filename
+        base_name = os.path.basename(file_path)
+        name, ext = os.path.splitext(base_name)
+        self.name_input.setText(f"{name}_compressed{ext}")
+
         self.drop_area.setText("File Selected")
         self.drop_area.setStyleSheet("border: 2px solid #4CAF50; border-radius: 10px; padding: 20px; color: #4CAF50;")
 
@@ -130,12 +145,24 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Invalid Input", "Please enter a valid number for target size.")
             return
 
-        # Output file path
-        base, ext = os.path.splitext(self.selected_file)
-        output_path = f"{base}_compressed{ext}"
+        # Determine output path (Exe directory)
+        if getattr(sys, 'frozen', False):
+            # Running as compiled exe
+            application_path = os.path.dirname(sys.executable)
+        else:
+            # Running as script
+            application_path = os.path.dirname(os.path.abspath(__file__))
+            # Adjust if we are in src/
+            # Actually for dev, usually we want it in the current working dir or script dir.
+            # Let's stick to script dir for now or CWD.
+            # But user said "path of the Exe".
 
-        # Check if output exists, ask to overwrite?
-        # For simplicity, just auto-rename or overwrite. Let's overwrite for now or append _compressed.
+        output_filename = self.name_input.text().strip()
+        if not output_filename:
+             base, ext = os.path.splitext(os.path.basename(self.selected_file))
+             output_filename = f"{base}_compressed{ext}"
+
+        output_path = os.path.join(application_path, output_filename)
 
         self.start_btn.setEnabled(False)
         self.drop_area.setEnabled(False)
