@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtCore import Qt, QThread, Signal, QMimeData
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 import compressor
+from _version import __version__
 
 class WorkerThread(QThread):
     progress = Signal(int, str)
@@ -70,7 +71,7 @@ class DragDropWidget(QLabel):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Video Compressor Tool")
+        self.setWindowTitle(f"Video Compressor Tool v{__version__}")
         self.setMinimumSize(400, 350)
 
         # Central Widget
