@@ -27,7 +27,14 @@ def get_video_info(input_path):
         width = int(resolution_match.group(1))
         height = int(resolution_match.group(2))
 
-    return duration, width, height
+    # Parse audio stream for bitrate
+    # Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 192 kb/s (default)
+    audio_bitrate_match = re.search(r"Stream #.*Audio:.*, (\d+) kb/s", result.stderr)
+    audio_bitrate = 0
+    if audio_bitrate_match:
+        audio_bitrate = int(audio_bitrate_match.group(1)) * 1000
+
+    return duration, width, height, audio_bitrate
 
 def parse_time_str(time_str):
     # time=00:00:05.12
@@ -42,7 +49,7 @@ def parse_time_str(time_str):
 
 def compress_video(input_path, output_path, target_size_mb, progress_callback=None):
     ffmpeg_exe = get_ffmpeg_path()
-    duration, width, height = get_video_info(input_path)
+    duration, width, height, source_audio_bitrate = get_video_info(input_path)
 
     if duration == 0:
         raise ValueError("Could not determine video duration")
@@ -52,11 +59,17 @@ def compress_video(input_path, output_path, target_size_mb, progress_callback=No
     # size_in_bits = target_size_mb * 8 * 1024 * 1024
     # bitrate = size_in_bits / duration
 
-    target_total_bitrate = (target_size_mb * 8 * 1024 * 1024) / duration
+    # Apply a safety margin (e.g., 95%) to account for container overhead
+    safe_target_size_mb = target_size_mb * 0.95
+    target_total_bitrate = (safe_target_size_mb * 8 * 1024 * 1024) / duration
 
-    # Audio bitrate - Keep high quality (minimum 128k, preferably more)
-    # We prioritize video downscaling over audio degradation.
-    audio_bitrate = 128 * 1024
+    # Audio bitrate - Keep high quality (minimum 192k)
+    # But don't upsample audio. If source is lower, use that.
+    target_audio_bitrate = 192 * 1024
+    audio_bitrate = target_audio_bitrate
+    if source_audio_bitrate > 0 and source_audio_bitrate < target_audio_bitrate:
+        audio_bitrate = source_audio_bitrate
+
 
     video_bitrate = target_total_bitrate - audio_bitrate
 
